@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+from subprocess import run, PIPE, DEVNULL
+from itertools import product
+from os import makedirs, chdir
+from pathlib import Path
+from time import sleep
+
+DIR = Path(__file__).parent
+LOG_DIR = DIR / 'logs'
+
+IMAGE_CMD = ['make', 'image']
+START_CMD = ['make', 'start', 'SERVICE_OPTIONS=--restart-condition=none']
+STOP_CMD = ['make', 'stop']
+LOGS_CMD = ['make', 'logs']
+CLEAN_CMD = ['make', 'clean-logs']
+WAIT_CMD = ['docker', 'service', 'ps', 'sock-test',
+            '-q', '-f', 'desired-state=running']
+
+CMD = '-cs -i4 -mUDP -l1'
+
+REPLICAS = [10, 20, 50, 100, 150, 200, 250, 300, 400]
+N_PEERS = [10, 20, 30, 40, 50, 100]
+
+
+def main():
+    makedirs(LOG_DIR, exist_ok=True)
+    chdir(DIR / '..')
+    run(IMAGE_CMD, stdout=DEVNULL)
+    for (replicas, n_peers) in product(REPLICAS, N_PEERS):
+        if n_peers > replicas:
+            continue
+
+        start(replicas, n_peers)
+
+
+def start(replicas, n_peers):
+    cmd = START_CMD + ['REPLICAS={}'.format(replicas),
+                       'CMD={} -n{}'.format(CMD, n_peers)]
+    print("Running: R={} N={}".format(replicas, n_peers))
+    print(cmd)
+    run(cmd, stdout=DEVNULL)
+    print("Waiting for completion...")
+    wait()
+
+    name = "r={}_n={}.txt".format(replicas, n_peers)
+    with (LOG_DIR / name).open('w') as f:
+        print("Saving logs to {}".format(LOG_DIR / name))
+        run(LOGS_CMD, stdout=f)
+
+    cleanup()
+    print("Done")
+
+
+def wait():
+    while True:
+        out = run(WAIT_CMD, stdout=PIPE)
+        if not out.stdout:
+            break
+        else:
+            sleep(1)
+
+
+def cleanup():
+    print("Cleanup")
+    run(CLEAN_CMD)
+    run(STOP_CMD)
+
+
+if __name__ == '__main__':
+    import atexit
+    atexit.register(cleanup)
+    main()
