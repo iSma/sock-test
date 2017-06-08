@@ -16,7 +16,7 @@ CLEAN_CMD = ['make', 'clean-logs']
 WAIT_CMD = ['docker', 'service', 'ps', 'sock-test',
             '-q', '-f', 'desired-state=running']
 
-CMD = '-cs -i4 -mUDP -l1'
+CMD = '-cs -i4 -mUDP -l50'
 
 REPLICAS = [10, 20, 50, 100, 150, 200, 250, 300, 400]
 N_PEERS = [10, 20, 30, 40, 50, 100]
