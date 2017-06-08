@@ -56,8 +56,8 @@ void server_loop(int sock_mode, int sockfd);
 
 
 uint16_t addr_to_str(const struct sockaddr *ai_addr, char *str, size_t max_len);
-void LOG(const char *level, const char *format, ...);
-void LOG_ERRNO(const char *prefix);
+void LOG(const char *level, const char *subject, const char *format, ...);
+void LOG_ERRNO(const char *subject);
 
 struct options parse_options(int argc, char **argv);
 void usage(const char *argv0);
@@ -76,28 +76,26 @@ int main(int argc, char **argv)
 
         FILE *log_file = fopen(log_path, "w");
         if (!log_file)
-            LOG_ERRNO("Can't open log file '%s', logging to stdout");
+            fprintf(stderr, "Can't open log file '%s', logging to stdout", log_path);
         else
-            LOG(INFO, "Logging to %s", log_path);
+            fprintf(stderr, "Logging to '%s'", log_path);
 
         LOG_FILE = log_file;
     }
 
-    LOG(INFO, "Program started");
-    LOG(INFO, "Options: tracker=%s port=%s n_peers=%d mode=%s ip_version=%s",
+    LOG(INFO, "program_start",
+            "tracker=%s\tport=%s\tn_peers=%d\tmode=%s\tip_version=%s\t"
+            "client_loops=%d\tsleep_start=%d\tsleep_loop=%d\tclient=%d\tserver=%d\tlog_dir=%s",
             opt.tracker_url, opt.port, opt.n_peers,
             opt.sock_mode == SOCK_DGRAM ? "UDP" : "TCP",
             opt.ip_version == AF_INET ? "4" :
-            opt.ip_version == AF_INET6 ? "6" : "any");
-    LOG(INFO, "Options: client_loops=%d sleep_start=%d sleep_loop=%d client=%d server=%d log_dir=%s",
+            opt.ip_version == AF_INET6 ? "6" : "any",
             opt.client_loops, opt.sleep_start, opt.sleep_loop,
             opt.client, opt.server, opt.log_dir);
 
     pthread_t server_thread = 0;
 
     if (opt.server) {
-        LOG(INFO, "Starting server...");
-
         if (opt.client)
             pthread_create(&server_thread, NULL, server, &opt);
         else
@@ -106,15 +104,13 @@ int main(int argc, char **argv)
 
     if (opt.client) {
         sleep(2);
-        LOG(INFO, "Starting client...");
-
         client(&opt);
 
         if (opt.server)
             pthread_cancel(server_thread);
     }
 
-    LOG(INFO, "Program stopped");
+    LOG(INFO, "program_end", "");
     return 0;
 }
 
@@ -122,9 +118,9 @@ int main(int argc, char **argv)
 void *client(void *arg) {
     const struct options *opt = arg;
 
-    LOG(INFO, "Sleeping for %ds", opt->sleep_start);
+    LOG(INFO, "client_sleep", "sleep=%d", opt->sleep_start);
     sleep(opt->sleep_start);
-    LOG(INFO, "Client started");
+    LOG(INFO, "client_start", "");
 
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
@@ -133,28 +129,25 @@ void *client(void *arg) {
 
     struct addrinfo *peers = NULL;
 
-    LOG(INFO, "getaddrinfo: retrieving peers in %s", opt->tracker_url);
-    for (int i = 0; i < DNS_RETRY; i++) {
-        int status = getaddrinfo(opt->tracker_url, opt->port, &hints, &peers);
-        if (status == 0)
-            break;
-
-        LOG(ERROR, "getaddrinfo: Failed (%d/%d) [%d] %s", i+1, DNS_RETRY, status, gai_strerror(status));
-        freeaddrinfo(peers);
-
-        if (i+1 < DNS_RETRY) {
-            LOG(INFO, "getaddrinfo: retrying in %ds", opt->sleep_loop);
-            sleep(opt->sleep_loop);
-        } else {
-            LOG(ERROR, "getaddrinfo: failed %d times, exiting", DNS_RETRY);
-            return NULL;
-        }
-    }
-
-    LOG(INFO, "getaddrinfo: success", opt->sleep_start);
-
     for (int loop = 0; opt->client_loops <= 0 || loop < opt->client_loops; loop++) {
-        LOG(INFO, "Loop %d", loop);
+        LOG(INFO, "client_loop", "loop=%d", loop);
+
+        LOG(INFO, "dns_lookup", "url=%s", opt->tracker_url);
+        for (int i = 0; i < DNS_RETRY; i++) {
+            int status = getaddrinfo(opt->tracker_url, opt->port, &hints, &peers);
+            if (status == 0)
+                break;
+
+            LOG(ERROR, "getaddrinfo", "try=%d\tretries=%d\terrno=%d\tstrerror=%s",
+                    i+1, DNS_RETRY,
+                    status, gai_strerror(status));
+            freeaddrinfo(peers);
+
+            if (i+1 < DNS_RETRY)
+                sleep(opt->sleep_loop);
+            else
+                return NULL;
+        }
 
         int n_peers = 0;
         for(struct addrinfo *p = peers; p != NULL; p = p->ai_next) {
@@ -167,6 +160,7 @@ void *client(void *arg) {
     }
 
     freeaddrinfo(peers);
+    LOG(INFO, "client_end", "");
     return NULL;
 }
 
@@ -179,9 +173,9 @@ void client_loop(int sock_mode, const struct addrinfo *peer, int loop) {
 
     snprintf(loop_str, sizeof(loop_str), "%d", loop);
 
-    LOG(INFO, "Sending to %s", addr_str);
+    LOG(INFO, "msg_send", "status=try\tloop=%d\tto=%s", loop, addr_str);
 
-    LOG(DEBUG, "socket: domain=%d type=%d protocol=%d",
+    LOG(DEBUG, "socket", "domain=%d\ttype=%d\tprotocol=%d",
             peer->ai_family, peer->ai_socktype, peer->ai_protocol);
 
     int sockfd = socket(peer->ai_family, peer->ai_socktype, peer->ai_protocol);
@@ -191,7 +185,7 @@ void client_loop(int sock_mode, const struct addrinfo *peer, int loop) {
     }
 
     if (sock_mode == SOCK_DGRAM) {
-        LOG(DEBUG, "sendto: sockfd=%d buf='%s' len=%d dest_addr=%s addrlen=%d",
+        LOG(DEBUG, "sendto", "sockfd=%d\tbuf=%s\tlen=%d\tdest_addr=%s\taddrlen=%d",
                 sockfd, loop_str, sizeof(loop_str), addr_str, peer->ai_addrlen);
 
         status = sendto(sockfd, loop_str, sizeof(loop_str), 0, peer->ai_addr, peer->ai_addrlen);
@@ -203,7 +197,7 @@ void client_loop(int sock_mode, const struct addrinfo *peer, int loop) {
     }
 
     if (sock_mode == SOCK_STREAM) {
-        LOG(DEBUG, "connect: sockfd=%d addr=%s addrlen=%d",
+        LOG(DEBUG, "connect", "sockfd=%d\taddr=%s\taddrlen=%d",
                 sockfd, addr_str, peer->ai_addrlen);
 
         status = connect(sockfd, peer->ai_addr, peer->ai_addrlen);
@@ -214,7 +208,7 @@ void client_loop(int sock_mode, const struct addrinfo *peer, int loop) {
         }
 
 
-        LOG(DEBUG, "send: sockfd=%d buf='%s' len=%d",
+        LOG(DEBUG, "send", "sockfd=%d\tbuf=%s\tlen=%d",
                 sockfd, loop_str, sizeof(loop_str));
 
         status = send(sockfd, loop_str, sizeof(loop_str), 0);
@@ -225,6 +219,7 @@ void client_loop(int sock_mode, const struct addrinfo *peer, int loop) {
         }
     }
 
+    LOG(INFO, "msg_send", "status=ok\tloop=%d\tto=%s", loop, addr_str);
     close(sockfd);
 }
 
@@ -241,24 +236,24 @@ void *server(void *arg) {
     hints.ai_flags = AI_PASSIVE;
     getaddrinfo(NULL, opt->port, &hints, &host);
 
-    LOG(INFO, "Available addresses (selecting first):");
     for(struct addrinfo *p = host; p != NULL; p = p->ai_next) {
         addr_to_str(host->ai_addr, addr_str, sizeof(addr_str));
-        LOG(INFO, "=> [%s]: %s", p->ai_family == AF_INET6 ? "IPv6" : "IPv4", addr_str);
+        LOG(INFO, "server_addr", "ip_verion=%s addr=%s",
+                p->ai_family == AF_INET6 ? "IPv6" : "IPv4", addr_str);
     }
 
-    LOG(DEBUG, "server socket: domain=%d type=%d protocol=%d",
+    LOG(DEBUG, "server_socket", "domain=%d\ttype=%d\tprotocol=%d",
             host->ai_family, host->ai_socktype, host->ai_protocol);
 
     int sockfd = socket(host->ai_family, host->ai_socktype, host->ai_protocol);
     if (sockfd < 0) {
-        LOG_ERRNO("server socket");
+        LOG_ERRNO("server_socket");
         freeaddrinfo(host);
         return NULL;
     }
 
     addr_to_str(host->ai_addr, addr_str, sizeof(addr_str));
-    LOG(DEBUG, "bind: sockfd=%d addr=%s addrlen=%d",
+    LOG(DEBUG, "bind", "sockfd=%d\taddr=%s\taddrlen=%d",
             sockfd, addr_str, host->ai_addrlen);
 
     status = bind(sockfd, host->ai_addr, host->ai_addrlen);
@@ -271,7 +266,7 @@ void *server(void *arg) {
     freeaddrinfo(host);
 
     if (opt->sock_mode == SOCK_STREAM) {
-        LOG(DEBUG, "listen: sockfd=%d backlog=%d", sockfd, opt->n_peers);
+        LOG(DEBUG, "listen", "sockfd=%d\tbacklog=%d", sockfd, opt->n_peers);
         status = listen(sockfd, opt->n_peers);
         if (status < 0) {
             LOG_ERRNO("listen");
@@ -279,7 +274,7 @@ void *server(void *arg) {
         }
     }
 
-    LOG(INFO, "%s Server listening on port %s",
+    LOG(INFO, "server_start", "mode=%s\tport=%s",
             opt->sock_mode == SOCK_DGRAM ? "UDP" : "TCP", opt->port);
 
     for (;;) {
@@ -296,7 +291,7 @@ void server_loop(int sock_mode, int sockfd) {
     int status = 0;
 
     if (sock_mode == SOCK_DGRAM) {
-        LOG(DEBUG, "recvfrom: sockfd=%d len=%d src_addr=%p",
+        LOG(DEBUG, "recvfrom", "sockfd=%d\tlen=%d\tsrc_addr=%p",
                 sockfd, sizeof(buf), &client);
 
         status = recvfrom(sockfd, buf, sizeof(buf), 0, &client, &client_size);
@@ -307,7 +302,7 @@ void server_loop(int sock_mode, int sockfd) {
     }
 
     if (sock_mode == SOCK_STREAM) {
-        LOG(DEBUG, "accept: sockfd=%d src_addr=%p", sockfd, &client);
+        LOG(DEBUG, "accept", "sockfd=%d\tsrc_addr=%p", sockfd, &client);
 
         int clientfd = accept(sockfd, &client, &client_size);
         if (clientfd < 0) {
@@ -315,7 +310,7 @@ void server_loop(int sock_mode, int sockfd) {
             return;
         }
 
-        LOG(DEBUG, "recv: clientfd=%d len=%d", clientfd, sizeof(buf));
+        LOG(DEBUG, "recv", "clientfd=%d\tlen=%d", clientfd, sizeof(buf));
         status = recv(clientfd, buf, sizeof(buf), 0);
         if (status < 0) {
             LOG_ERRNO("recv");
@@ -327,7 +322,7 @@ void server_loop(int sock_mode, int sockfd) {
     }
 
     addr_to_str(&client, addr_str, sizeof(addr_str));
-    LOG(INFO, "Message received from %s during loop %s", addr_str, buf);
+    LOG(INFO, "msg_recv", "from=%s\tloop=%s", addr_str, buf);
 }
 
 
@@ -357,7 +352,7 @@ uint16_t addr_to_str(const struct sockaddr *addr, char *str, size_t max_len) {
 }
 
 
-void LOG(const char *level, const char *format, ...) {
+void LOG(const char *level, const char *subject, const char *format, ...) {
     FILE *file = LOG_FILE ? LOG_FILE : stdout;
     char time_str[20] = {'\0'};
     time_t now = time(NULL);
@@ -365,20 +360,19 @@ void LOG(const char *level, const char *format, ...) {
     localtime_r(&now, &time_r);
     strftime(time_str, sizeof(time_str), "%FT%H:%M:%S", &time_r);
 
-    fprintf(file, "[%s]\t[%s]\t%s:\t", time_str, HOSTNAME, level);
-
+    char msg[1024] = {'\0'};
     va_list vargs;
     va_start(vargs, format);
-    vfprintf(file, format, vargs);
+    vsnprintf(msg, sizeof(msg), format, vargs);
     va_end (vargs);
 
-    fprintf(file, "\n");
+    fprintf(file, "%s\t%s\t%s\t%s\t%s\n", time_str, HOSTNAME, level, subject, msg);
     fflush(file);
 }
 
 
-void LOG_ERRNO(const char *prefix) {
-    LOG("ERROR", "%s: [%d] %s", prefix, errno, strerror(errno));
+void LOG_ERRNO(const char *subject) {
+    LOG(ERROR, subject, "errno=%d\tstrerror=%s", errno, strerror(errno));
 }
 
 

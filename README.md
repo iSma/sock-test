@@ -16,12 +16,34 @@ docker service create --publish 5000:5000 --name registry registry:2
 
 ## Usage
  
-Run `make start` to start the service, `make stop` to stop it. Logs are saved
-to a volume; run `make logs` to access a container with this volume mounted.
-Run `make clean-docker` to remove the created volume, image and network.
+### Start the service
+```sh
+make start
+```
+ 
+### Stop the service
+```sh
+make stop
+```
 
+### Print logs
+```sh
+make logs
+```
+
+### Delete logs
+```sh
+make clean-logs
+```
+
+### Clean up volume, image, network
+```sh
+make clean-docker
+```
+
+### Configuration
 The service can be configured by customizing variables in `Makefile` or
 overriding their value in the command line:
 ```sh
-make start REPLICAS=200 SERVICE_OPTIONS='
+make start REPLICAS=200 SERVICE_OPTIONS='--restart-condition=none --limit-memory=128MB'
 ```

@@ -15,9 +15,10 @@ SERVICE  = $(BIN)
 NETWORK  = $(SERVICE)-net
 VOLUME   = $(SERVICE)-vol
 REPLICAS = 100
-SERVICE_OPTIONS = --restart-max-attempts=1
+SERVICE_OPTIONS = --restart-condition=none
 
-CMD = -cs -i4 -u"tasks.$(SERVICE)" -mUDP
+TRACKER_URL = "tasks.$(SERVICE)"
+CMD = -cs -i4 -mUDP
 
 # =============================
 
@@ -52,7 +53,7 @@ clean-docker: stop
 	-docker rmi "$(REPO)/$(IMAGE)"
 
 clean-logs:
-	-docker run -v "$(VOLUME)":"/logs" -w"/logs" -it ubuntu \
+	-docker run -v "$(VOLUME)":"/logs" -w"/logs" busybox \
 		find -name '*.txt' -exec rm '{}' +
 
 start: image service
@@ -71,15 +72,16 @@ service: stop network volume
 		--mount type=volume,source="$(VOLUME)",destination="/logs" \
 		--replicas "$(REPLICAS)" \
 		$(SERVICE_OPTIONS) \
-		"$(REPO)/$(IMAGE)" -f/logs $(CMD)
+		"$(REPO)/$(IMAGE)" -f/logs -u"$(TRACKER_URL)" $(CMD)
 
 network:
-	docker network ls --format '{{.Name}}' | grep -qx "$(NETWORK)" \
+	@docker network ls --format '{{.Name}}' | grep -qx "$(NETWORK)" \
 		|| docker network create --driver overlay "$(NETWORK)"
 
 volume:
-	docker volume ls -q | grep -qx "$(VOLUME)" \
+	@docker volume ls -q | grep -qx "$(VOLUME)" \
 		|| docker volume create --name "$(VOLUME)"
 
 logs: volume
-	docker run -v "$(VOLUME)":"/logs" -w"/logs" -it ubuntu
+	@docker run -v "$(VOLUME)":"/logs" -w"/logs" busybox \
+		find -name '*.txt' -exec cat '{}' +
