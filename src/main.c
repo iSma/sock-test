@@ -127,11 +127,10 @@ void *client(void *arg) {
     hints.ai_family = opt->ip_version;
     hints.ai_socktype = opt->sock_mode;
 
-    struct addrinfo *peers = NULL;
-
     for (int loop = 0; opt->client_loops <= 0 || loop < opt->client_loops; loop++) {
-        LOG(INFO, "client_loop", "loop=%d", loop);
+        struct addrinfo *peers = NULL;
 
+        LOG(INFO, "client_loop", "loop=%d", loop);
         LOG(INFO, "dns_lookup", "url=%s", opt->tracker_url);
         for (int i = 0; i < DNS_RETRY; i++) {
             int status = getaddrinfo(opt->tracker_url, opt->port, &hints, &peers);
@@ -146,7 +145,7 @@ void *client(void *arg) {
             if (i+1 < DNS_RETRY)
                 sleep(opt->sleep_loop);
             else
-                return NULL;
+                peers = NULL;
         }
 
         int n_peers = 0;
@@ -156,10 +155,10 @@ void *client(void *arg) {
                 break;
         }
 
+        freeaddrinfo(peers);
         sleep(opt->sleep_loop);
     }
 
-    freeaddrinfo(peers);
     LOG(INFO, "client_end", "");
     return NULL;
 }

@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -o nounset -o pipefail
+
+SERVICE_NAME=sock-test
+
+cd $(dirname $0)
+LOG_DIR="$PWD/logs"
+cd ..
+mkdir -p "$LOG_DIR"
+
+# start TEST_NAME ARGS...
+start () {
+    TEST_NAME=$1
+    echo
+    echo "Starting $TEST_NAME..."
+    shift
+    echo $@
+    make start "$@" > /dev/null
+
+    echo
+    echo "Waiting for completion..."
+    wait
+
+    echo
+    echo "Saving logs to $LOG_DIR/$TEST_NAME.txt"
+    make logs > "$LOG_DIR/$TEST_NAME.txt"
+    echo
+    echo "Done!"
+}
+
+stop () {
+    echo "Stopping service"
+    make stop > /dev/null
+    sleep 1
+    echo "Cleaning logs"
+    make clean-logs > /dev/null
+    exit 0
+}
+
+wait() {
+    while true
+    do
+        sleep 10
+        NLINES=$(docker service ps $SERVICE_NAME -f desired-state=running 2> /dev/null | awk 'NR>1' | wc -l)
+        if [ $NLINES = 0 ]
+        then
+            break
+        fi
+    done
+}
+
+if [ $# -lt 2 ]
+then
+    echo "Usage: $0 TEST_NAME ARGS..."
+    exit 1
+fi
+
+trap stop EXIT
+start "$@"

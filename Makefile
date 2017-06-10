@@ -63,7 +63,7 @@ image: $(BIN)
 	docker push "$(REPO)/$(IMAGE)"
 
 stop:
-	-docker service rm "$(SERVICE)" 2> /dev/null
+	docker service rm "$(SERVICE)" 2> /dev/null || true
 
 service: stop network volume
 	docker service create \
@@ -75,12 +75,10 @@ service: stop network volume
 		"$(REPO)/$(IMAGE)" -f/logs -u"$(TRACKER_URL)" $(CMD)
 
 network:
-	@docker network ls --format '{{.Name}}' | grep -qx "$(NETWORK)" \
-		|| docker network create --driver overlay "$(NETWORK)"
+	@docker network create --driver overlay "$(NETWORK)" 2> /dev/null || true
 
 volume:
-	@docker volume ls -q | grep -qx "$(VOLUME)" \
-		|| docker volume create --name "$(VOLUME)"
+	@docker volume create --name "$(VOLUME)" > /dev/null || true
 
 logs: volume
 	@docker run -v "$(VOLUME)":"/logs" -w"/logs" busybox \
