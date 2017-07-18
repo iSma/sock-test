@@ -17,7 +17,7 @@ VOLUME   = $(SERVICE)-vol
 REPLICAS = 100
 SERVICE_OPTIONS = --restart-condition=none
 
-TRACKER_URL = "tasks.$(SERVICE)"
+TRACKER_URL = tasks.$(SERVICE)
 CMD = -cs -i4 -mUDP
 
 # =============================
@@ -67,15 +67,16 @@ stop:
 
 service: stop network volume
 	docker service create \
-		--name "$(SERVICE)" \
-		--network "$(NETWORK)" \
+		--name="$(SERVICE)" \
+		--network="$(NETWORK)" \
 		--mount type=volume,source="$(VOLUME)",destination="/logs" \
-		--replicas "$(REPLICAS)" \
+		--replicas="$(REPLICAS)" \
+		--detach=false \
 		$(SERVICE_OPTIONS) \
 		"$(REPO)/$(IMAGE)" -f/logs -u"$(TRACKER_URL)" $(CMD)
 
 network:
-	@docker network create --driver overlay "$(NETWORK)" 2> /dev/null || true
+	@docker network create --driver=overlay --subnet=10.111.0.0/16 "$(NETWORK)" 2> /dev/null || true
 
 volume:
 	@docker volume create --name "$(VOLUME)" > /dev/null || true
